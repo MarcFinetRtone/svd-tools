@@ -218,9 +218,9 @@ class GdbSvdCmd(gdb.Command):
                 #access could be not defined for a register
                 if register.access in [None, "read-only", "read-write", "read-writeOnce"]:
                         addr = peripheral.base_address + register.address_offset
-                        cmd = "monitor mdw phys {:#x}".format(addr)
+                        cmd = "x {:#x}".format(addr)
                         try:
-                            val = int(gdb.execute(cmd, False, True).split(': ')[1], 16)
+                            val = int(gdb.execute(cmd, False, True).split(':')[1].strip(), 16)
                         except Exception as err:
                             #if openocd can't access to addr => data abort
                             return err
