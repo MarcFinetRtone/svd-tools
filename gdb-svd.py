@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 #
 # Copyright 2019 Ludovic Barre <1udovic.6arre@gmail.com>
+# Copyright 2022 Rtone
 #
 # This file is part of svd-tools.
 #
@@ -18,6 +19,7 @@
 # along with svd-tools.  If not, see <https://www.gnu.org/licenses/>.
 
 import gdb
+import re
 from terminaltables import AsciiTable
 from cmsis_svd.parser import SVDParser
 from textwrap import wrap
@@ -49,6 +51,7 @@ class GdbSvd(gdb.Command):
             GdbSvdSetCmd(device, peripherals)
             GdbSvdInfoCmd(device, peripherals)
             GdbSvdDumpCmd(device, peripherals)
+            GdbSvdGpioCmd(device, peripherals)
 
         except Exception as inst:
             gdb.write("\n{}\n".format(inst))
@@ -171,11 +174,11 @@ class GdbSvdCmd(gdb.Command):
             f_str = []
             fields = r["fields"]
             if fields is not None:
-            for f in fields:
-                if f["value"] > 0 and syntax_highlighting == True:
-                    f_str.append("\033[94m{name}={value:#x}\033[0m".format(**f))
-                else:
-                    f_str.append("{name}={value:#x}".format(**f))
+                for f in fields:
+                    if f["value"] > 0 and syntax_highlighting == True:
+                        f_str.append("\033[94m{name}={value:#x}\033[0m".format(**f))
+                    else:
+                        f_str.append("{name}={value:#x}".format(**f))
 
             f_str = '\n'.join(wrap(" ".join(f_str), self.column_with))
             regs_table.append([r["name"], r["addr"], r["value"], f_str])
@@ -196,6 +199,7 @@ class GdbSvdCmd(gdb.Command):
         val = value
         if field is not None:
             max_val = ((1 << field.bit_width) - 1)
+            gdb.write(f"field {field}, {max_val}, {value}\n")
             if value > max_val:
                 raise Exception("Invalid value, > max of field")
 
@@ -203,11 +207,15 @@ class GdbSvdCmd(gdb.Command):
 
             #read register value with gdb
             val = self.read(peripheral, register)
+            #gdb.write(f"Reading {register} value: {val:08x}\n")
             if val is None:
                 raise Exception("Register not readable")
 
             val &= ~mask
             val |= value << field.bit_offset
+            #gdb.write(f"Setting {register} value: {val:08x}\n")
+        # else:
+        #     gdb.write(f"Setting {register} to {val:08x}\n")
 
         # write val to target
         self.write(peripheral, register, val)
@@ -233,7 +241,9 @@ class GdbSvdCmd(gdb.Command):
         """
         if register.access in [None, "write-only", "read-write", "writeOnce", "read-writeOnce"]:
             addr = peripheral.base_address + register.address_offset
-            cmd = "monitor mww phys {:#x} {:#x}".format(addr, val) # TODO
+            #cmd = "monitor mww phys {:#x} {:#x}".format(addr, val) # TODO
+            cmd = f"set *0x{addr:x} = 0x{val:x}"
+            # gdb.write(f"COMMAND: {cmd}\n")
             gdb.execute(cmd, False, True)
         else:
             raise Exception("Register not writable")
@@ -322,11 +332,10 @@ class GdbSvdSetCmd(GdbSvdCmd):
                 value = int(args[3], 16)
             else:
                 value = int(args[2], 16)
-
             GdbSvdCmd.set_register(self, periph, reg, value, field)
 
         except Exception as inst:
-            gdb.write("{}\n".format(inst))
+            gdb.write("ERR: {}\n".format(inst))
 
         except:
             gdb.write("Error cannot set the value\n")
@@ -417,9 +426,123 @@ class GdbSvdDumpCmd(GdbSvdCmd):
                 file_object.write("Registers Dump\n")
                 file_object.close()
                 for per in periphs:
-                regs = per.registers
+                    regs = per.registers
                 GdbSvdCmd.print_registers(self, per, regs, output_file_name, False)
             except:
                 gdb.write("Error writting to file: {}\n".format(output_file_name))
         except:
             gdb.write("Error cannot dump registers\n")
+
+class GdbSvdGpioCmd(GdbSvdCmd):
+    """
+    Show GPIOs status: svd gpio
+    Or  set ports:     svg gpio <pin> in|out
+                       svg gpio <pin> high|low
+    """
+
+    RE_PIN = re.compile(r'([^\d ]+)(\d+)')
+
+    def __init__(self, device, peripherals):
+        GdbSvdCmd.__init__(self, device, peripherals)
+        gdb.Command.__init__(self, "svd gpio", gdb.COMMAND_DATA)
+
+    def complete(self, text, word):
+        args = str(text).split(" ")
+        if len(args) > 2:
+            return gdb.COMPLETE_NONE
+
+        return GdbSvdCmd.complete(self, text, word)
+
+    @classmethod
+    def _pin_mode(cls, mode, odr, idr, alt):
+        if mode in [1]:
+            # output
+            if odr:
+                return "↱"
+            else:
+                return "↳"
+        if mode in [0]:
+            # input
+            if idr:
+                return "↰"
+            else:
+                return "↲"
+        if mode in [2]:
+            # alternate
+            return "a"
+        if mode in [3]:
+            # analog
+            return "~"
+        # unknown
+        return "?"
+
+    def _dump(self, port=None):
+        gdb.write("       0123 4567 8901 2345\n")
+        for periph_name in ['GPIOA', 'GPIOB', 'GPIOC', 'GPIOD', 'GPIOE', 'GPIOF', 'GPIOG']:
+            periph = self.peripherals[periph_name]
+            regs = [r for r in periph.registers if r.name in['MODER', 'OTYPER', 'ODR', 'IDR', 'AFRL', 'AFRH']]
+            val = self.get_registers_val(periph, regs)
+
+            def get_value(reg_name, pin, nb_bit):
+                for v in val:
+                    if v['name'] != reg_name:
+                        continue
+                    return (int(v['value'], 16) >> (pin * nb_bit)) & (2**nb_bit - 1)
+                raise Exception(f"Invalid register name {reg_name}: val")
+
+            afr_value = get_value('AFRL', 0, 32) | get_value('AFRH', 0, 32) << 16
+
+            gdb.write(f"{periph_name}:")
+            for i in range(16):
+                if i % 4 == 0:
+                    gdb.write(" ")
+                gdb.write(self._pin_mode(get_value('MODER', i, 2), get_value('ODR', i, 1), get_value('IDR', i, 1), afr_value))
+            gdb.write("\n")
+
+
+    def _set(self, pin, value):
+        gdb.write(f"pin: {pin}, value: {value}\n")
+        found = self.RE_PIN.match(pin)
+        if not found:
+            return gdb.write(f"invalid pin {pin}\n")
+        port, pin_nb = found.group(1), found.group(2)
+        periph = self.peripherals['GPIO' + port[1]] # FIXME PA → GPIOA
+
+        mode = None
+        level = None
+        if value in ['i', 'in', 'input']:
+            mode = 0
+        if value in ['o', 'out', 'output']:
+            mode = 1
+        if value in ['h', 'high', '1']:
+            level = 1
+        if value in ['l', 'low', '0']:
+            level = 0
+
+        def set_register(reg_name, field_name, value):
+            reg = [r for r in periph.registers if r.name == reg_name][0]
+            field =  [f for f in reg.fields if f.name == field_name][0]
+            return self.set_register(periph, reg, value, field)
+
+        if level is not None:
+            gdb.write("Setting level\n")
+            return set_register('ODR', f'ODR{pin_nb}', level)
+
+        if mode is not None:
+            return set_register('MODER', f'MODER{pin_nb}', mode)
+
+        return gdb.write(f"Invalid value {value}\n")
+
+
+
+    def invoke(self, arg, from_tty):
+        args = str(arg).split(" ")
+        try:
+            if not args:
+                return self._dump()
+            if len(args) == 1:
+                return self._dump(args[0])
+            for i in range(len(args) - 1):
+                self._set(args[0], args[1 + i])
+        except Exception as inst:
+            gdb.write("{}\n".format(inst))
