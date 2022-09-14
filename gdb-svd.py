@@ -544,7 +544,7 @@ class GdbSvdGpioCmd(GdbSvdCmd):
 
 
     def invoke(self, arg, from_tty):
-        args = str(arg).split(" ")
+        args = gdb.string_to_argv(arg)
         try:
             if not args:
                 return self._dump()
