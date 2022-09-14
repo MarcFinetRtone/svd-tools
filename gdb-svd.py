@@ -23,6 +23,14 @@ import re
 from terminaltables import AsciiTable
 from cmsis_svd.parser import SVDParser
 from textwrap import wrap
+import sys
+
+try:
+    from colors import color
+except ImportError:
+    sys.stderr.write("Try installing python package colors\n")
+    def color(txt, **kwargs):
+        return txt
 
 class GdbSvd(gdb.Command):
     """The CMSIS SVD (System View Description) inspector commands
@@ -458,23 +466,23 @@ class GdbSvdGpioCmd(GdbSvdCmd):
         if mode in [1]:
             # output
             if odr:
-                return "↱"
+                return color("↱", fg='magenta')
             else:
-                return "↳"
+                return color("↳", fg='blue')
         if mode in [0]:
             # input
             if idr:
-                return "↰"
+                return color("↰", fg='yellow')
             else:
-                return "↲"
+                return color("↲", fg='green')
         if mode in [2]:
             # alternate
-            return "a"
+            return color("a", fg='grey')
         if mode in [3]:
             # analog
-            return "~"
+            return color("~")
         # unknown
-        return "?"
+        return color("?", fg='red')
 
     def _dump(self, port=None):
         gdb.write("       0123 4567 8901 2345\n")
