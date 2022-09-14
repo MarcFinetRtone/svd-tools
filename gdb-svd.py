@@ -71,7 +71,7 @@ class GdbSvdCmd(gdb.Command):
         self.column_with = 100
 
     def complete(self, text, word):
-        args = str(text).split(" ")
+        args = gdb.string_to_argv(arg)
         nb_args = len(args)
 
         if nb_args == 1:
@@ -257,14 +257,14 @@ class GdbSvdGetCmd(GdbSvdCmd):
         gdb.Command.__init__(self, "svd get", gdb.COMMAND_DATA)
 
     def complete(self, text, word):
-        args = str(text).split(" ")
+        args = gdb.string_to_argv(text)
         if len(args) > 2:
             return gdb.COMPLETE_NONE
 
         return GdbSvdCmd.complete(self, text, word)
 
     def invoke(self, arg, from_tty):
-        args = str(arg).split(" ")
+        args = gdb.string_to_argv(arg)
         if len(args) > 2:
             gdb.write("Invalid parameter\n")
             gdb.execute("help svd get")
@@ -300,14 +300,14 @@ class GdbSvdSetCmd(GdbSvdCmd):
         gdb.Command.__init__(self, "svd set", gdb.COMMAND_DATA)
 
     def complete(self, text, word):
-        args = str(text).split(" ")
+        args = gdb.string_to_argv(text)
         if len(args) > 3:
             return gdb.COMPLETE_NONE
 
         return GdbSvdCmd.complete(self, text, word)
 
     def invoke(self, arg, from_tty):
-        args = str(arg).split(" ")
+        args = gdb.string_to_argv(arg)
 
         try:
             periph_name = args[0].upper()
@@ -348,14 +348,14 @@ class GdbSvdInfoCmd(GdbSvdCmd):
         gdb.Command.__init__(self, "svd info", gdb.COMMAND_DATA)
 
     def complete(self, text, word):
-        args = str(text).split(" ")
+        args = gdb.string_to_argv(text)
         if len(args) > 3:
             return gdb.COMPLETE_NONE
 
         return GdbSvdCmd.complete(self, text, word)
 
     def invoke(self, arg, from_tty):
-        args = str(arg).split(" ")
+        args = gdb.string_to_argv(arg)
 
         if len(args) < 1 or len(args) > 3:
             gdb.write("Invalid parameter\n")
@@ -390,7 +390,7 @@ class GdbSvdDumpCmd(GdbSvdCmd):
         gdb.Command.__init__(self, "svd dump", gdb.COMMAND_DATA)
 
     def complete(self, text, word):
-        args = str(text).split(" ")
+        args = gdb.string_to_argv(text)
         nb_args = len(args)
 
         if nb_args == 1:
@@ -405,7 +405,7 @@ class GdbSvdDumpCmd(GdbSvdCmd):
         return GdbSvdCmd.complete(self, " ".join(args), word)
 
     def invoke(self, arg, from_tty):
-        args = str(arg).split(" ")
+        args = gdb.string_to_argv(arg)
         if len(args) < 1 or len(args) > 2:
             gdb.write("Invalid parameter\n")
             gdb.execute("help svd dump")
@@ -447,7 +447,7 @@ class GdbSvdGpioCmd(GdbSvdCmd):
         gdb.Command.__init__(self, "svd gpio", gdb.COMMAND_DATA)
 
     def complete(self, text, word):
-        args = str(text).split(" ")
+        args = gdb.string_to_argv(text)
         if len(args) > 2:
             return gdb.COMPLETE_NONE
 
