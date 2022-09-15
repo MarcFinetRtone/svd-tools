@@ -463,27 +463,33 @@ class GdbSvdGpioCmd(GdbSvdCmd):
         return GdbSvdCmd.complete(self, text, word)
 
     @classmethod
-    def _pin_mode(cls, mode, odr, idr, alt):
+    def _pin_mode(cls, mode, odr, idr, pull, alt):
         if mode in [1]:
             # output
             if odr:
-                return color("↱", fg='magenta')
+                txt, fg = "↱", 'magenta'
             else:
-                return color("↳", fg='blue')
-        if mode in [0]:
+                txt, fg = "↳", 'blue'
+        elif mode in [0]:
             # input
             if idr:
-                return color("↰", fg='yellow')
+                txt, fg = "↰", 'yellow'
             else:
-                return color("↲", fg='green')
-        if mode in [2]:
+                txt, fg = "↲", 'green'
+        elif mode in [2]:
             # alternate
-            return color("a", fg='grey')
-        if mode in [3]:
+            txt, fg = "a", 'grey'
+        elif mode in [3]:
             # analog
-            return color("~")
-        # unknown
-        return color("?", fg='red')
+            txt, fg = "~", ''
+        else:
+            # unknown
+            txt, fg = "?", 'red'
+        if pull in [1]:
+            txt += "̄"
+        elif pull in [2]:
+            txt += "̱"
+        return color(txt, fg=fg)
 
 
     @classmethod
@@ -497,7 +503,7 @@ class GdbSvdGpioCmd(GdbSvdCmd):
         gdb.write("       0123 4567 8901 2345\n")
         for periph_name in ['GPIOA', 'GPIOB', 'GPIOC', 'GPIOD', 'GPIOE', 'GPIOF', 'GPIOG']:
             periph = self.peripherals[periph_name]
-            regs = [r for r in periph.registers if r.name in['MODER', 'OTYPER', 'ODR', 'IDR', 'AFRL', 'AFRH']]
+            regs = [r for r in periph.registers if r.name in['MODER', 'OTYPER', 'ODR', 'IDR', 'AFRL', 'AFRH', 'PUPDR']]
             val = self.get_registers_val(periph, regs)
 
             # TODO: check DataAbort (comm pb)
@@ -511,7 +517,7 @@ class GdbSvdGpioCmd(GdbSvdCmd):
             for i in range(16):
                 if i % 4 == 0:
                     gdb.write(" ")
-                gdb.write(self._pin_mode(get_value('MODER', i), get_value('ODR', i), get_value('IDR', i), afr_value))
+                gdb.write(self._pin_mode(get_value('MODER', i), get_value('ODR', i), get_value('IDR', i), get_value('PUPDR', i), afr_value))
             gdb.write("\n")
 
 
@@ -524,8 +530,10 @@ class GdbSvdGpioCmd(GdbSvdCmd):
         periph = self.peripherals['GPIO' + port[-1:].upper()] # PA → GPIOA
 
         mode = None
+        pull = None
         level = None
         alternate = None
+        # Mode
         if value in ['i', 'in', 'input']:
             mode = 0
         if value in ['o', 'out', 'output']:
@@ -536,8 +544,16 @@ class GdbSvdGpioCmd(GdbSvdCmd):
             level = 0
         if value in ['a', 'alt', 'alternate']:
             mode = 2
+        # Alternate
         if value in [f'a{i}' for i in range(15)]:
             alternate = int(value[1:], 10)
+        # Pull
+        if value in ['u', 'up', 'pullup', 'pull-up']:
+            pull = 1
+        if value in ['d', 'down', 'pulldown', 'pull-down']:
+            pull = 2
+        if value in ['n', 'nopull', 'no-pull']:
+            pull = 0
 
         def set_register(reg_name, field_name, value):
             reg = [r for r in periph.registers if r.name == reg_name][0]
@@ -549,6 +565,9 @@ class GdbSvdGpioCmd(GdbSvdCmd):
 
         if mode is not None:
             return set_register('MODER', f'MODER{pin_nb}', mode)
+
+        if pull is not None:
+            return set_register('PUPDR', f'PUPDR{pin_nb}', pull)
 
         if alternate is not None:
             reg = 'AFRH'
